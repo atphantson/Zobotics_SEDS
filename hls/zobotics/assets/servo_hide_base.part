@@ -1,0 +1,14 @@
+{
+    "configuration": "default",
+    "documentId": "0d070155c0be5ebd6ad44cb9",
+    "documentMicroversion": "3b86cb0ea1959011ea92fef1",
+    "documentVersion": "290516b74f25438bca3e4cd9",
+    "elementId": "12deefdfba34f844fc66a831",
+    "fullConfiguration": "default",
+    "id": "MuKiPiIlLwWKCbVcJ",
+    "isStandardContent": false,
+    "name": "servo_hide_base <1>",
+    "partId": "JHD",
+    "suppressed": false,
+    "type": "Part"
+}

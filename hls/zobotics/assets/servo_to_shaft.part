@@ -1,0 +1,13 @@
+{
+    "configuration": "default",
+    "documentId": "0d070155c0be5ebd6ad44cb9",
+    "documentMicroversion": "9682600602c22bed546f490e",
+    "elementId": "ebd6b0ee390999a76a92f5b5",
+    "fullConfiguration": "default",
+    "id": "MPYwJr9MQaO5GrCuq",
+    "isStandardContent": false,
+    "name": "servo_to_shaft <2>",
+    "partId": "JHD",
+    "suppressed": false,
+    "type": "Part"
+}

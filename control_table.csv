@@ -1,0 +1,70 @@
+Register Number,Size (Bytes),Register Name
+0,1,Firmware Major Version
+1,1,Firmware Minor Version
+2,1,Endianness (0=Little Endian)
+3,1,Servo Major Version
+4,1,Servo Minor Version
+5,1,Primary ID
+6,1,Baud Rate
+7,1,Secondary ID
+8,1,Response Status Level
+9,2,Minimum Angle Limit
+11,2,Maximum Angle Limit
+13,1,Maximum Temperature Limit
+14,1,Maximum Input Voltage
+15,1,Minimum Input Voltage
+16,2,Maximum Torque
+18,1,Phase
+19,1,Unload Conditions
+20,1,LED Alarm Conditions
+21,1,Position P (Kp)
+22,1,Position D (Kd)
+23,1,Position I (Ki)
+24,1,Minimum Start Force
+25,1,Integral Limit
+26,1,Positive Deadband
+27,1,Negative Deadband
+28,2,Protection Current
+30,1,Angle Resolution
+31,2,Position Offset
+33,1,Running Mode
+34,1,Current P Coefficient
+35,1,Current I Coefficient
+36,1,Undefined
+37,1,Speed Closed-loop P
+38,1,Overcurrent Protection Time
+39,1,Speed Closed-loop I
+40,1,Torque Switch
+41,1,Acceleration
+42,2,Target Position
+44,2,Target Torque
+46,2,Running Speed
+48,2,Torque Limit
+50,1,Position P (SRAM)
+51,1,Position D (SRAM)
+52,1,Position I (SRAM)
+53,1,Undefined
+54,1,Undefined
+55,1,Lock Flag
+56,2,Current Position
+58,2,Current Speed
+60,2,Current Load
+62,1,Current Voltage
+63,1,Current Temperature
+64,1,Asynchronous Write Flag
+65,1,Servo Status
+66,1,Movement Flag
+67,2,Target Position (Feedback)
+69,2,Current Current
+71,2,Undefined
+73,2,Current Offset
+77,1,Factory Parameter vFk
+78,1,Factory Parameter KgI
+79,1,Factory Parameter pFk
+80,1,Moving Speed Threshold
+81,1,DTs (ms)
+82,1,Factory Parameter eFk
+83,1,Vk (ms)
+84,1,Maximum Speed Limit
+85,1,Acceleration Limit
+86,1,Acceleration Multiple

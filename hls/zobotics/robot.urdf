@@ -1,0 +1,135 @@
+<?xml version="1.0" ?>
+<!-- Generated using onshape-to-robot -->
+<!-- Onshape https://cad.onshape.com/documents/0d070155c0be5ebd6ad44cb9/w/707ea45bbead83dbacd89b65/e/d1b3a2e16f2ca10d357d2b2d -->
+<robot name="zobotics">
+  <!-- Ajouter AVANT le robot -->
+<link name="world"/>
+
+<joint name="world_to_base" type="fixed">
+  <parent link="world"/>
+  <child link="fixed_base"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+  <!-- Link fixed_base -->
+  <link name="fixed_base">
+    <inertial>
+      <origin xyz="0.000328968 7.74e-10 0.0483656" rpy="0 0 0"/>
+      <mass value="0.280"/>
+      <inertia ixx="0.00176108" ixy="9e-12" ixz="-3.79295e-05" iyy="0.00170496" iyz="3.1e-11" izz="0.00174972"/>
+    </inertial>
+    <!-- Part fixed_base -->
+    <visual>
+      <origin xyz="1.788e-09 -3.79e-10 4.41e-10" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="assets/fixed_base.obj"/>
+      </geometry>
+      <material name="fixed_base_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="1.788e-09 -3.79e-10 4.41e-10" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="assets/fixed_base.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link st3215_20200328_asm -->
+  <link name="st3215_20200328_asm">
+    <inertial>
+      <origin xyz="-8.6665e-08 -0.00195243 -0.0460557" rpy="0 0 0"/>
+      <mass value="0.28021491"/>
+      <inertia ixx="0.00069617" ixy="3.945e-09" ixz="6.824e-09" iyy="0.000702596" iyz="-9.49679e-06" izz="0.00045166"/>
+    </inertial>
+    <!-- Part base_to_arm1 -->
+    <visual>
+      <origin xyz="0.0457863 -0.0294642 -0.0709413" rpy="-3.14159 -0 -0"/>
+      <geometry>
+        <mesh filename="assets/base_to_arm1.obj"/>
+      </geometry>
+      <material name="base_to_arm1_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0457863 -0.0294642 -0.0709413" rpy="-3.14159 -0 -0"/>
+      <geometry>
+        <mesh filename="assets/base_to_arm1.obj"/>
+      </geometry>
+    </collision>
+
+  </link>
+  <!-- Link arm1 -->
+  <link name="arm1">
+    <inertial>
+      <origin xyz="-0.00920783 0.0902703 -0.0726224" rpy="0 0 0"/>
+      <mass value="0.22406647"/>
+      <inertia ixx="0.00161229" ixy="0.000143725" ixz="5.84483e-06" iyy="0.000213946" iyz="-5.7255e-05" izz="0.00160206"/>
+    </inertial>
+    <!-- Part arm1 -->
+    <visual>
+      <origin xyz="-0.000139835 0.00107877 -0.0890029" rpy="-1.5708 0 -3.04021"/>
+      <geometry>
+        <mesh filename="assets/arm1.obj"/>
+      </geometry>
+      <material name="arm1_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.000139835 0.00107877 -0.0890029" rpy="-1.5708 0 -3.04021"/>
+      <geometry>
+        <mesh filename="assets/arm1.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link servo_to_shaft -->
+  <link name="servo_to_shaft">
+    <inertial>
+      <origin xyz="-0.0748313 -0.00839663 -0.0714925" rpy="0 0 0"/>
+      <mass value="0.244817"/>
+      <inertia ixx="8.65717e-05" ixy="-9.01463e-05" ixz="3.19349e-05" iyy="0.000852735" iyz="4.24656e-06" izz="0.000855519"/>
+    </inertial>
+    <!-- Part arm2 -->
+    <visual>
+      <origin xyz="1.4029e-05 4.09657e-05 -0.0890029" rpy="-1.5708 0 -1.46942"/>
+      <geometry>
+        <mesh filename="assets/arm2.obj"/>
+      </geometry>
+      <material name="arm2_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="1.4029e-05 4.09657e-05 -0.0890029" rpy="-1.5708 0 -1.46942"/>
+      <geometry>
+        <mesh filename="assets/arm2.obj"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from servo_to_shaft to part_1 -->
+  <!-- Joint from arm1 to servo_to_shaft -->
+  <joint name="servo2shaft3" type="revolute">
+    <origin xyz="-0.0162905 0.160336 -0.0911532" rpy="-3.14159 -0 -0.734695"/>
+    <parent link="arm1"/>
+    <child link="servo_to_shaft"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="2.5" velocity="60" lower="-2.0" upper="2.36"/>
+  </joint>
+  <!-- Joint from st3215_20200328_asm to arm1 -->
+  <joint name="servo2shaft2" type="revolute">
+    <origin xyz="-0 -0.0316144 -0.0717778" rpy="-1.5708 -0.801811 -3.14159"/>
+    <parent link="st3215_20200328_asm"/>
+    <child link="arm1"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="2.5" velocity="60" lower="-0.43" upper="2.20"/>
+  </joint>
+  <!-- Joint from fixed_base to st3215_20200328_asm -->
+  <joint name="base_rotZ" type="revolute">
+    <origin xyz="1.788e-09 -3.79e-10 0.099" rpy="-3.14159 -0 0.112517"/>
+    <parent link="fixed_base"/>
+    <child link="st3215_20200328_asm"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1.5" velocity="60" lower="-1.57" upper="1.57"/>
+  </joint>
+</robot>
