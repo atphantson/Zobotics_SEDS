@@ -5,7 +5,7 @@ sys.path.append("..")
 from scservo_sdk import *
 
 PORT = '/dev/ttyUSB0'
-ID = 3
+ID = 2
 BAUD = 1000000
 
 # Adresses SRAM

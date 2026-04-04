@@ -79,27 +79,35 @@ def main():
     group_write = GroupSyncWrite(packet, ADDR_GOAL_TORQUE, 2)
 
     print("Gravity compensation running...\n")
+    try : 
 
-    while True:
-        q = read_joint_positions_rad(packet, port)
+        while True:
+            q = read_joint_positions_rad(packet, port)
 
-        g = pin.computeGeneralizedGravity(model, data, q)  # Nm
-        g = g * 10.197  # -> kg.cm
+            g = pin.computeGeneralizedGravity(model, data, q)  # Nm
+            g = g * 10.197  # -> kg.cm
 
-        torque_A = -g / KT
-        hls_units = torque_A / UNIT_TO_AMPS
+            torque_A = -g / KT
+            hls_units = torque_A / UNIT_TO_AMPS
 
-        group_write.clearParam()
+            group_write.clearParam()
 
-        for scs_id, val in zip(IDS, hls_units):
-            val_i = int(np.clip(val, -2047, 2047))
-            group_write.addParam(scs_id, to_little_endian_2b(val_i))
+            for scs_id, val in zip(IDS, hls_units):
+                val_i = int(np.clip(val, -2047, 2047))
+                group_write.addParam(scs_id, to_little_endian_2b(val_i))
 
-        group_write.txPacket()
+            group_write.txPacket()
 
-        print("HLS goal torque:", [int(v) for v in hls_units])
-        time.sleep(0.02)
+            print("HLS goal torque:", [int(v) for v in hls_units])
+            time.sleep(0.02)
+    except KeyboardInterrupt:
+        print("\nStopping...")
 
+    # Disable torque on exit
+    packet.write1ByteTxRx(1, ADDR_TORQUE_ENABLE, 0)
+    packet.write1ByteTxRx(2, ADDR_TORQUE_ENABLE, 0)
+    packet.write1ByteTxRx(3, ADDR_TORQUE_ENABLE, 0)
+    port.closePort()
 
 if __name__ == "__main__":
     main()
