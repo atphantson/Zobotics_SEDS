@@ -122,7 +122,7 @@
     <parent link="st3215_20200328_asm"/>
     <child link="arm1"/>
     <axis xyz="0 0 1"/>
-    <limit effort="2.5" velocity="60" lower="-0.43" upper="2.20"/>
+    <limit effort="2.5" velocity="60" lower="-1.40" upper="2.75"/>
   </joint>
   <!-- Joint from fixed_base to st3215_20200328_asm -->
   <joint name="base_rotZ" type="revolute">

@@ -34,18 +34,18 @@ else:
 # Set port baudrate 1000000
 if portHandler.setBaudRate(1000000):
     print("Succeeded to change the baudrate")
-    packetHandler.write1ByteTxRx(3, 40, 0)
+    packetHandler.write1ByteTxRx(1, 40, 0)
 else:
     print("Failed to change the baudrate")
     quit()
 
 while 1:
     # Read the current position of servo motor (ID1)
-    scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(3)
+    scs_present_position, scs_present_speed, scs_comm_result, scs_error = packetHandler.ReadPosSpeed(1)
     if scs_comm_result != COMM_SUCCESS:
         print(packetHandler.getTxRxResult(scs_comm_result))
     else:
-        print("[ID:%03d] PresPos:%d PresSpd:%d" % (3, scs_present_position, scs_present_speed))
+        print("[ID:%03d] PresPos:%d PresSpd:%d" % (1, scs_present_position, scs_present_speed))
     if scs_error != 0:
         print(packetHandler.getRxPacketError(scs_error))
     time.sleep(1)

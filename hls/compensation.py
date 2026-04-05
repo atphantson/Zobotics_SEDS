@@ -83,6 +83,7 @@ def main():
 
         while True:
             q = read_joint_positions_rad(packet, port)
+            print(f"Joint angles (rad): {q}")
 
             g = pin.computeGeneralizedGravity(model, data, q)  # Nm
             g = g * 10.197  # -> kg.cm
@@ -98,7 +99,7 @@ def main():
 
             group_write.txPacket()
 
-            print("HLS goal torque:", [int(v) for v in hls_units])
+            #print("HLS goal torque:", [int(v) for v in hls_units])
             time.sleep(0.02)
     except KeyboardInterrupt:
         print("\nStopping...")
