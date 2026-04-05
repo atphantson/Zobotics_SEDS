@@ -114,7 +114,7 @@
     <parent link="arm1"/>
     <child link="servo_to_shaft"/>
     <axis xyz="0 0 1"/>
-    <limit effort="2.5" velocity="60" lower="-2.0" upper="2.36"/>
+    <limit effort="2.5" velocity="60" lower="-2.20" upper="3.34"/>
   </joint>
   <!-- Joint from st3215_20200328_asm to arm1 -->
   <joint name="servo2shaft2" type="revolute">

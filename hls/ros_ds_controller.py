@@ -60,8 +60,8 @@ class RosDsController(Node):
 
         # Parameters matching MATLAB bridge CONTROL behavior
         self.declare_parameter("activate_ns", False)
-        self.declare_parameter("principle_damping", 40.0)
-        self.declare_parameter("orthogonal_damping", 15.0)
+        self.declare_parameter("principle_damping", 7.0)
+        self.declare_parameter("orthogonal_damping", 4.0)
         self.declare_parameter("null_stiffness", 1.0)
         self.declare_parameter("null_damping", 2.0)
         self.declare_parameter("pseudoinverse_damping", 1e-2)
@@ -303,7 +303,7 @@ class RosDsController(Node):
             print("torque units:", hls_units)
             print("gravity units:", g_units)
 
-            return g
+            return tau
 
         if fsm == FSM.FREEZE:
             if self.q_freeze is None:
