@@ -129,24 +129,33 @@ class HlsServoInterface:
 
     def set_mode_torque(self) -> None:
         # Match compensation.py behavior:
-        # for each servo, set mode to torque then enable torque immediately.
+        # for each servo, disable torque, set mode to torque then enable torque immediately.
         for servo_id in self.ids:
+            comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_TORQUE_ENABLE, 0)
+            self._raise_if_error(comm, err, servo_id, "disable torque for set_mode_torque")
             comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_MODE, MODE_TORQUE)
             self._raise_if_error(comm, err, servo_id, "set_mode_torque")
             comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_TORQUE_ENABLE, 1)
-            self._raise_if_error(comm, err, servo_id, "set_mode_torque")
+            self._raise_if_error(comm, err, servo_id, "enable torque for set_mode_torque")
         self._mode = MODE_TORQUE
-
 
     def set_mode_position(self) -> None:
         self._set_mode(MODE_POSITION)
 
-    def set_mode_wheel(self) -> None:
+    def set_mode_wheel(self, acceleration: int = 50) -> None:
         for servo_id in self.ids:
+            comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_TORQUE_ENABLE, 0)
+            self._raise_if_error(comm, err, servo_id, "disable torque for set_mode_wheel")
             comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_MODE, MODE_WHEEL)
             self._raise_if_error(comm, err, servo_id, "set_mode_wheel")
+            
+            # Write acceleration (address 41). wheel.py example uses 50.
+            # 0 often means maximum acceleration, but matching the example ensures safe behavior.
+            comm, err = self._packet.write1ByteTxRx(servo_id, 41, acceleration)
+            self._raise_if_error(comm, err, servo_id, "set wheel acceleration")
+            
             comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_TORQUE_ENABLE, 1)
-            self._raise_if_error(comm, err, servo_id, "set_mode_wheel")
+            self._raise_if_error(comm, err, servo_id, "enable torque for set_mode_wheel")
         self._mode = MODE_WHEEL
 
     def _set_mode(self, mode: int) -> None:

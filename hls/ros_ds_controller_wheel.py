@@ -300,9 +300,14 @@ class RosDsController(Node):
         """Switch servo hardware mode when entering / leaving CONTROL."""
         if target_fsm == FSM.CONTROL and self._hw_mode != "wheel":
             self.get_logger().info("Switching servos to WHEEL mode for CONTROL")
-            # Send zero speed first to avoid a speed jump on mode switch
-            self.servo.send_speed_rad_s(np.zeros(len(self.servo.ids)))
             self.servo.set_mode_wheel()
+            
+            # In wheel mode, the goal torque register acts as the output torque limit.
+            # Initialize it high, along with 0 speed, otherwise it will be stuck with 
+            # the last gravity compensation torque value (which is too weak to spin it).
+            max_torque = float(self.get_parameter("torque_limit_units").value)
+            self.servo.send_torque_units(np.full(len(self.servo.ids), max_torque))
+            self.servo.send_speed_rad_s(np.zeros(len(self.servo.ids)))
             self._hw_mode = "wheel"
 
         elif target_fsm != FSM.CONTROL and self._hw_mode != "torque":
