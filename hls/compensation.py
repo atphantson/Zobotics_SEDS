@@ -103,7 +103,10 @@ def main():
             time.sleep(0.02)
     except KeyboardInterrupt:
         print("\nStopping...")
-
+        packet.write1ByteTxRx(1, ADDR_TORQUE_ENABLE, 0)
+        packet.write1ByteTxRx(2, ADDR_TORQUE_ENABLE, 0)
+        packet.write1ByteTxRx(3, ADDR_TORQUE_ENABLE, 0)
+        port.closePort()
     # Disable torque on exit
     packet.write1ByteTxRx(1, ADDR_TORQUE_ENABLE, 0)
     packet.write1ByteTxRx(2, ADDR_TORQUE_ENABLE, 0)

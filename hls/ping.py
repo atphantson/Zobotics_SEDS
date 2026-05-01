@@ -38,11 +38,11 @@ else:
 
 # Try to ping the ID:1 FTServo
 # Get SCServo model number
-scs_model_number, scs_comm_result, scs_error = packetHandler.ping(1)
+scs_model_number, scs_comm_result, scs_error = packetHandler.ping(4)
 if scs_comm_result != COMM_SUCCESS:
     print("%s" % packetHandler.getTxRxResult(scs_comm_result))
 else:
-    print("[ID:%03d] ping Succeeded. SCServo model number : %d" % (1, scs_model_number))
+    print("[ID:%03d] ping Succeeded. SCServo model number : %d" % (3, scs_model_number))
 if scs_error != 0:
     print("%s" % packetHandler.getRxPacketError(scs_error))
 

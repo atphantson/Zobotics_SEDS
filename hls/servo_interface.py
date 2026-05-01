@@ -15,7 +15,7 @@ from typing import Dict, Iterable, List, Sequence
 import numpy as np
 
 import sys
-sys.path.append("/home/valentin/ZOBotics/FTServo_Python")
+sys.path.append("/home/phantson/FTServo_Python")
 
 from angle_rad import motor_position_to_angle_rad
 from scservo_sdk import *
@@ -34,6 +34,7 @@ RPM_TO_RAD_S = 2.0 * np.pi / 60.0
 ADDR_MODE = 33
 ADDR_TORQUE_ENABLE = 40
 ADDR_GOAL_TORQUE = 44
+ADDR_GOAL_SPEED = 46          # wheel mode: target speed, unit=0.732 RPM, BIT15=direction
 ADDR_PRESENT_POSITION = 56
 ADDR_PRESENT_SPEED = 58
 ADDR_PRESENT_CURRENT = 69
@@ -41,6 +42,9 @@ ADDR_PRESENT_CURRENT = 69
 MODE_POSITION = 0
 MODE_WHEEL = 1
 MODE_TORQUE = 2
+
+# Wheel mode max register value (16-bit signed, BIT15 = direction sign)
+_WHEEL_CLIP = 32767
 
 
 def to_little_endian_2b(val: int) -> List[int]:
@@ -133,11 +137,17 @@ class HlsServoInterface:
             self._raise_if_error(comm, err, servo_id, "set_mode_torque")
         self._mode = MODE_TORQUE
 
+
     def set_mode_position(self) -> None:
         self._set_mode(MODE_POSITION)
 
     def set_mode_wheel(self) -> None:
-        self._set_mode(MODE_WHEEL)
+        for servo_id in self.ids:
+            comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_MODE, MODE_WHEEL)
+            self._raise_if_error(comm, err, servo_id, "set_mode_wheel")
+            comm, err = self._packet.write1ByteTxRx(servo_id, ADDR_TORQUE_ENABLE, 1)
+            self._raise_if_error(comm, err, servo_id, "set_mode_wheel")
+        self._mode = MODE_WHEEL
 
     def _set_mode(self, mode: int) -> None:
         if self._mode == mode:
@@ -236,6 +246,40 @@ class HlsServoInterface:
     def send_torque_nm(self, torque_nm: Sequence[float], clip: int = 2047) -> None:
         torque_a = (np.asarray(torque_nm, dtype=np.float64) * NM_TO_KGCM) / KT_KGCM_PER_AMP
         self.send_torque_amps(torque_a, clip=clip)
+
+    def send_speed_units(self, speed_units: Sequence[float], clip: int = _WHEEL_CLIP) -> None:
+        """Send joint speed commands in servo units (0.732 RPM per unit).
+
+        Only valid when servos are in MODE_WHEEL. Uses the same GroupSyncWrite
+        pattern as send_torque_units, targeting ADDR_GOAL_SPEED (46).
+        The sign is encoded via BIT15 through to_little_endian_2b, identical
+        to the torque encoding used by compensation.py.
+        """
+        if len(speed_units) != len(self.ids):
+            raise ValueError("speed_units must have the same length as ids")
+
+        group_write = GroupSyncWrite(self._packet, ADDR_GOAL_SPEED, 2)
+        group_write.clearParam()
+
+        for servo_id, command in zip(self.ids, speed_units):
+            value = int(np.clip(np.rint(command), -clip, clip))
+            if not group_write.addParam(servo_id, to_little_endian_2b(value)):
+                raise ServoInterfaceError(f"SyncWrite addParam failed for servo {servo_id}")
+
+        comm = group_write.txPacket()
+        group_write.clearParam()
+        if comm != COMM_SUCCESS:
+            raise ServoInterfaceError(self._packet.getTxRxResult(comm))
+
+    def send_speed_rad_s(self, speed_rad_s: Sequence[float], clip: int = _WHEEL_CLIP) -> None:
+        """Send joint speed commands in rad/s.
+
+        Converts rad/s → RPM → servo units (1 unit = 0.732 RPM).
+        Only valid when servos are in MODE_WHEEL.
+        """
+        units = np.asarray(speed_rad_s, dtype=np.float64) / (SPEED_UNIT_RPM * RPM_TO_RAD_S)
+        print("speed_units:", units)
+        self.send_speed_units(units, clip=clip)
 
     def ping(self) -> Dict[int, bool]:
         results: Dict[int, bool] = {}

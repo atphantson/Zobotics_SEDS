@@ -1,3 +1,5 @@
 .venv
 venv
 libraries
+hls/__pycache__
+scservo_sdk/__pycache__

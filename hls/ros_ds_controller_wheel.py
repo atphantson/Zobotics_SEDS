@@ -5,8 +5,14 @@ Responsibilities:
 - Read robot state from HLS servos.
 - Publish state to MATLAB/RLearn side.
 - Receive DS Cartesian velocity command from ROS.
-- Run FSM and impedance-like torque control.
-- Send torque commands to servos.
+- Run FSM: CONTROL uses wheel (speed) mode, all other states use torque mode.
+- Send speed or torque commands to servos depending on FSM state.
+
+FSM / hardware mode mapping:
+    IDLE    → torque mode  (gravity compensation + light damping)
+    LEARN   → torque mode  (gravity compensation, kinesthetic teaching)
+    FREEZE  → torque mode  (stiffness + damping around frozen joint position)
+    CONTROL → wheel  mode  (Cartesian velocity → joint velocity via J pseudo-inverse)
 """
 
 from __future__ import annotations
@@ -36,6 +42,12 @@ class FSM(enum.Enum):
     LEARN = "LEARN"
 
 
+def _damped_pseudoinverse(jacobian: np.ndarray, damping: float) -> np.ndarray:
+    """Damped least-squares pseudo-inverse: J^T (J J^T + λ² I)^{-1}."""
+    jjt = jacobian @ jacobian.T
+    return jacobian.T @ np.linalg.inv(jjt + damping * np.eye(jjt.shape[0]))
+
+
 class RosDsController(Node):
     def __init__(self) -> None:
         super().__init__("ros_ds_controller")
@@ -50,24 +62,29 @@ class RosDsController(Node):
         self.declare_parameter("torque_limit_units", 1800)
         self.declare_parameter("mode", "IDLE")
 
+        # Torque-mode gains (IDLE / LEARN / FREEZE)
         self.declare_parameter("k_dq", 0.35)
-        # Set to 0.0 to match compensation.py pure gravity compensation in IDLE.
         self.declare_parameter("k_idle_damping", -0.2)
         self.declare_parameter("k_freeze", 1.2)
         self.declare_parameter("k_learn_damping", 0.0)
         self.declare_parameter("k_null", 0.1)
         self.declare_parameter("k_null_damping", 0.08)
+        self.declare_parameter("q_null", [0.0, 0.0, 0.0])
+        self.declare_parameter("gravity_scale", 1.0)
 
-        # Parameters matching MATLAB bridge CONTROL behavior
+        # Wheel-mode CONTROL parameters
+        # Damping factor on the pseudo-inverse to handle near-singular configs.
+        self.declare_parameter("wheel_pinv_damping", 1e-2)
+        # Hard limit on individual joint speed commands (rad/s).
+        self.declare_parameter("wheel_max_joint_rad_s", 3.0)
+
+        # Null-space (torque-mode CONTROL legacy params, kept for compatibility)
         self.declare_parameter("activate_ns", False)
-        self.declare_parameter("principle_damping", 2)
-        self.declare_parameter("orthogonal_damping", 1)
+        self.declare_parameter("principle_damping", 7.0)
+        self.declare_parameter("orthogonal_damping", 4.0)
         self.declare_parameter("null_stiffness", 1.0)
         self.declare_parameter("null_damping", 2.0)
         self.declare_parameter("pseudoinverse_damping", 1e-2)
-
-        self.declare_parameter("q_null", [0.0, 0.0, 0.0])
-        self.declare_parameter("gravity_scale", 1.0)
 
         # Learn-mode recording controls
         self.declare_parameter("learn_sampling_hz", 100.0)
@@ -116,14 +133,20 @@ class RosDsController(Node):
         ping = self.servo.ping()
         if not all(ping.values()):
             raise RuntimeError(f"Servo ping failed: {ping}")
+
+        # Start in torque mode (safe default for IDLE).
         self.servo.set_mode_torque()
         self.servo.set_torque_enable(True)
 
-        # --- State ---
+        # --- FSM state ---
         self.fsm = FSM.IDLE
+        # Track which hardware mode is currently active so we only switch when needed.
+        self._hw_mode: str = "torque"   # "torque" | "wheel"
+
+        # --- Twist state ---
         self.last_twist = np.zeros(3, dtype=np.float64)
         self.cartesian_twist = np.zeros(3, dtype=np.float64)
-        self.last_twist_stamp_ns = 0
+        self.last_twist_stamp_ns: int = 0
         self.q_freeze: Optional[np.ndarray] = None
         self._last_mode_warning = ""
 
@@ -148,7 +171,11 @@ class RosDsController(Node):
         period = 1.0 / float(self.get_parameter("control_hz").value)
         self.create_timer(period, self._run_control_cycle)
 
-        self.get_logger().info("ROS DS controller started")
+        self.get_logger().info("ROS DS controller started (wheel-mode CONTROL)")
+
+    # ------------------------------------------------------------------
+    # Subscriber
+    # ------------------------------------------------------------------
 
     def _on_twist_command(self, msg: Float64MultiArray) -> None:
         data = np.asarray(msg.data, dtype=np.float64).reshape(-1)
@@ -164,6 +191,10 @@ class RosDsController(Node):
 
         self.last_twist = command
         self.last_twist_stamp_ns = self.get_clock().now().nanoseconds
+
+    # ------------------------------------------------------------------
+    # Main control cycle
+    # ------------------------------------------------------------------
 
     def _run_control_cycle(self) -> None:
         try:
@@ -186,9 +217,13 @@ class RosDsController(Node):
             j_lin = jac[0:3, :]
             ee_vel = j_lin @ dq
 
-            # Match MATLAB bridge velocity filtering
+            # Cartesian velocity filter with underflow guard
+            _VEL_DEADBAND = 1e-6
+            ee_vel_clean = np.where(np.abs(ee_vel) < _VEL_DEADBAND, 0.0, ee_vel)
             alpha = 0.2
-            self.cartesian_twist = alpha * ee_vel + (1.0 - alpha) * self.cartesian_twist
+            self.cartesian_twist = alpha * ee_vel_clean + (1.0 - alpha) * self.cartesian_twist
+            if np.linalg.norm(self.cartesian_twist) < _VEL_DEADBAND:
+                self.cartesian_twist = np.zeros(3)
 
             self._publish_state(sample.timestamp, ee_pos, ee_vel)
             self._publish_joint_state(sample.timestamp, q, dq)
@@ -196,22 +231,25 @@ class RosDsController(Node):
             # Learn controls (edge-triggered via bool parameters)
             self._handle_learning_parameter_commands()
 
-            # FSM transitions
+            # FSM transitions — also handles hardware mode switch
             self._update_fsm()
 
             if self.fsm == FSM.LEARN:
                 self._record_learning_sample(ee_pos, ee_vel)
 
-            # Dynamics terms
-            g = -pin.computeGeneralizedGravity(self.model, self.data, q)
-            g *= float(self.get_parameter("gravity_scale").value)
-
-            #Control law
-            tau = self._compute_torque(self.fsm, q, dq, jac, j_lin, self.cartesian_twist, g)
-
-            # Send command
-            torque_limit_units = int(self.get_parameter("torque_limit_units").value)
-            self.servo.send_torque_nm(tau, clip=torque_limit_units)
+            # --- Send command depending on active FSM ---
+            if self.fsm == FSM.CONTROL:
+                # Wheel mode: compute and send joint speed command
+                dq_des = self._compute_wheel_speed(j_lin)
+                print("dq_des (rad/s):", np.round(dq_des, 4))
+                self.servo.send_speed_rad_s(dq_des)
+            else:
+                # Torque mode: gravity compensation law
+                g = -pin.computeGeneralizedGravity(self.model, self.data, q)
+                g *= float(self.get_parameter("gravity_scale").value)
+                tau = self._compute_torque(self.fsm, q, dq, jac, j_lin, self.cartesian_twist, g)
+                torque_limit_units = int(self.get_parameter("torque_limit_units").value)
+                self.servo.send_torque_nm(tau, clip=torque_limit_units)
 
             msg = String()
             msg.data = self.fsm.value
@@ -223,37 +261,93 @@ class RosDsController(Node):
             self.get_logger().error(f"Control cycle exception: {err}")
             self.get_logger().debug(traceback.format_exc())
         except KeyboardInterrupt:
-            self.set_mode_torque()
+            pass
+
+    # ------------------------------------------------------------------
+    # FSM update — handles hardware mode transitions
+    # ------------------------------------------------------------------
 
     def _update_fsm(self) -> None:
         mode = str(self.get_parameter("mode").value).upper().strip()
-        if mode == "CONTROL":
-            self.fsm = FSM.CONTROL
-            self.q_freeze = None
-            return
 
-        if mode == "FREEZE":
+        if mode == "CONTROL":
+            new_fsm = FSM.CONTROL
+        elif mode == "FREEZE":
             if self.fsm != FSM.FREEZE:
                 self.q_freeze = None
-            self.fsm = FSM.FREEZE
-            return
+            new_fsm = FSM.FREEZE
+        elif mode == "LEARN":
+            new_fsm = FSM.LEARN
+        elif mode == "IDLE":
+            new_fsm = FSM.IDLE
+        else:
+            warning = f"Unknown mode '{mode}', falling back to IDLE"
+            if warning != self._last_mode_warning:
+                self.get_logger().warning(warning)
+                self._last_mode_warning = warning
+            new_fsm = FSM.IDLE
 
-        if mode == "LEARN":
-            self.fsm = FSM.LEARN
+        # Hardware mode switch only when FSM actually changes
+        if new_fsm != self.fsm:
+            self._switch_hardware_mode(new_fsm)
+
+        self.fsm = new_fsm
+
+        if self.fsm != FSM.FREEZE:
             self.q_freeze = None
-            return
 
-        if mode == "IDLE":
-            self.fsm = FSM.IDLE
-            self.q_freeze = None
-            return
+    def _switch_hardware_mode(self, target_fsm: FSM) -> None:
+        """Switch servo hardware mode when entering / leaving CONTROL."""
+        if target_fsm == FSM.CONTROL and self._hw_mode != "wheel":
+            self.get_logger().info("Switching servos to WHEEL mode for CONTROL")
+            # Send zero speed first to avoid a speed jump on mode switch
+            self.servo.send_speed_rad_s(np.zeros(len(self.servo.ids)))
+            self.servo.set_mode_wheel()
+            self._hw_mode = "wheel"
 
-        # Fallback safety
-        self.fsm = FSM.IDLE
-        warning = f"Unknown mode '{mode}', falling back to IDLE"
-        if warning != self._last_mode_warning:
-            self.get_logger().warning(warning)
-            self._last_mode_warning = warning
+        elif target_fsm != FSM.CONTROL and self._hw_mode != "torque":
+            self.get_logger().info(f"Switching servos back to TORQUE mode for {target_fsm.value}")
+            # Zero speed before leaving wheel mode
+            self.servo.send_speed_rad_s(np.zeros(len(self.servo.ids)))
+            self.servo.set_mode_torque()
+            self._hw_mode = "torque"
+
+    # ------------------------------------------------------------------
+    # CONTROL: wheel-mode speed command
+    # ------------------------------------------------------------------
+
+    def _compute_wheel_speed(self, j_lin: np.ndarray) -> np.ndarray:
+        """Convert Cartesian v_des [m/s] to joint velocities [rad/s].
+
+        Uses a damped pseudo-inverse of the linear Jacobian.
+        Clamps each joint to wheel_max_joint_rad_s.
+        If the twist command has timed out, returns zero velocities.
+        """
+        # Timeout guard: if MATLAB stopped publishing, stop the robot
+        timeout_s = float(self.get_parameter("twist_timeout_s").value)
+        now_ns = self.get_clock().now().nanoseconds
+        if self.last_twist_stamp_ns > 0:
+            age_s = (now_ns - self.last_twist_stamp_ns) * 1e-9
+            if age_s > timeout_s:
+                return np.zeros(self.nq, dtype=np.float64)
+
+        v_des = self.last_twist  # shape (3,)
+
+        # Damped pseudo-inverse J_lin^# = J_lin^T (J_lin J_lin^T + λ² I)^{-1}
+        damping = float(self.get_parameter("wheel_pinv_damping").value)
+        j_pinv = _damped_pseudoinverse(j_lin, damping)   # shape (nq, 3)
+
+        dq_des = j_pinv @ v_des  # shape (nq,)
+
+        # Clamp individual joint speeds
+        max_dq = float(self.get_parameter("wheel_max_joint_rad_s").value)
+        dq_des = np.clip(dq_des, -max_dq, max_dq)
+
+        return dq_des
+
+    # ------------------------------------------------------------------
+    # Torque law (IDLE / LEARN / FREEZE)
+    # ------------------------------------------------------------------
 
     def _compute_torque(
         self,
@@ -266,47 +360,6 @@ class RosDsController(Node):
         g: np.ndarray,
     ) -> np.ndarray:
         q_null = np.asarray(self.get_parameter("q_null").value, dtype=np.float64)
-
-        if fsm == FSM.CONTROL:
-            # Compliant-twist-like task torque in Cartesian space.
-            # D = d_orth * I + (d_principle - d_orth) * n n^T, with n = v_des / ||v_des||.
-            v_des = self.last_twist
-            v_meas = cartesian_twist
-
-
-            print("v_des:", v_des)
-            print("v_meas:", v_meas)
-            d_principle = float(self.get_parameter("principle_damping").value)
-            d_orthogonal = float(self.get_parameter("orthogonal_damping").value)
-
-            v_norm = np.linalg.norm(v_des)
-            if v_norm > 1e-12:
-                n_dir = v_des / v_norm
-                damping_mat = d_orthogonal * np.eye(3) + (d_principle - d_orthogonal) * np.outer(n_dir, n_dir)
-            else:
-                damping_mat = d_orthogonal * np.eye(3)
-
-            cartesian_force = damping_mat @ (v_des - v_meas) + 100 * v_des
-            tau = j_lin.T @ cartesian_force
-
-            # Null-space projected joint damping/stiffness correction as in MATLAB bridge
-            if bool(self.get_parameter("activate_ns").value):
-                pinv_damping = float(self.get_parameter("pseudoinverse_damping").value)
-                jac_damped_inv = self._damped_pseudoinverse(jac, damping=pinv_damping)
-                projector = np.eye(self.nq) - jac_damped_inv @ jac
-
-                null_stiffness = float(self.get_parameter("null_stiffness").value)
-                null_damping = float(self.get_parameter("null_damping").value)
-                null_error = null_stiffness * (q_null - q) - null_damping * dq
-                tau += projector @ null_error
-            
-            tau += g
-            hls_units = np.clip(np.rint(tau * 10.197162129779 / (8.3 * 0.0065)), -2047, 2047).astype(np.int32)
-            g_units = np.clip(np.rint(g * 10.197162129779 / (8.3 * 0.0065)), -2047, 2047).astype(np.int32)
-            print("torque units:", hls_units)
-            print("gravity units:", g_units)
-
-            return tau
 
         if fsm == FSM.FREEZE:
             if self.q_freeze is None:
@@ -323,6 +376,10 @@ class RosDsController(Node):
         # IDLE: gravity compensation + light damping
         k_idle = float(self.get_parameter("k_idle_damping").value)
         return g - k_idle * dq
+
+    # ------------------------------------------------------------------
+    # Learn-mode helpers
+    # ------------------------------------------------------------------
 
     def _handle_learning_parameter_commands(self) -> None:
         if bool(self.get_parameter("learn_clear_recording").value):
@@ -417,7 +474,6 @@ class RosDsController(Node):
             self.get_logger().info(f"Saved trajectories to {output_path}")
             return str(output_path)
         except Exception as err:  # pylint: disable=broad-except
-            # Fallback without scipy
             fallback = output_path.with_suffix(".npz")
             np.savez_compressed(str(fallback), trajectories=tensor)
             meta = fallback.with_suffix(".json")
@@ -445,10 +501,9 @@ class RosDsController(Node):
         msg.data = status
         self.learn_status_pub.publish(msg)
 
-    @staticmethod
-    def _damped_pseudoinverse(jacobian: np.ndarray, damping: float = 1e-2) -> np.ndarray:
-        jjt = jacobian @ jacobian.T
-        return jacobian.T @ np.linalg.inv(jjt + damping * np.eye(jjt.shape[0]))
+    # ------------------------------------------------------------------
+    # Publishers
+    # ------------------------------------------------------------------
 
     def _publish_state(self, timestamp: float, ee_pos: np.ndarray, ee_vel: np.ndarray) -> None:
         msg = Float64MultiArray()
@@ -474,9 +529,16 @@ class RosDsController(Node):
         msg.velocity = dq.tolist()
         self.joint_pub.publish(msg)
 
+    # ------------------------------------------------------------------
+    # Shutdown
+    # ------------------------------------------------------------------
+
     def shutdown(self) -> None:
         self.get_logger().info("Shutting down controller")
         try:
+            if self._hw_mode == "wheel":
+                self.servo.send_speed_rad_s(np.zeros(len(self.servo.ids)))
+                self.servo.set_mode_torque()
             self.servo.send_torque_units(np.zeros(len(self.servo.ids)))
             self.servo.set_torque_enable(False)
             self.servo.close()
